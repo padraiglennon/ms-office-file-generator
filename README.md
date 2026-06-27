@@ -190,6 +190,43 @@ Generated files are temporary and swept after one hour.
 HTMX is vendored at `src/ms_office_file_generator/web/static/htmx.min.js` (see
 `VENDOR.md` there for the pinned version and how to update it).
 
+## JSON API
+
+The same `gen-ui` server also exposes a JSON API under `/api` for programmatic,
+machine-friendly generation - ideal for scripting transient test files. Each
+generate endpoint takes a JSON body and **streams the file bytes back** (no
+download token, nothing persisted):
+
+```bash
+curl -s -o document.docx \
+  -H 'Content-Type: application/json' \
+  -d '{"complexity":"standard","sections":4,"seed":7}' \
+  http://127.0.0.1:18990/api/generate/doc
+```
+
+| Endpoint | Body fields | Returns |
+| --- | --- | --- |
+| `POST /api/generate/deck` | `complexity`, `slides`, `seed`, `video_url`, `background`, `background_color` | `.pptx` |
+| `POST /api/generate/doc` | `complexity`, `sections`, `seed`, `blocks_per_section` | `.docx` |
+| `POST /api/generate/sheet` | `complexity`, `sheets`, `seed`, `rows`, `cols` | `.xlsx` |
+| `POST /api/generate/pdf` | `complexity`, `sections`, `seed`, `blocks_per_section` | `.pdf` |
+| `POST /api/generate/markdown` | `complexity`, `sections`, `seed`, `blocks_per_section` | `.md` |
+| `POST /api/generate/fill` | multipart: `template` + `config` files | filled file + `X-Injection-Report` header |
+
+All body fields are optional and default to the same values as the CLI. A wrong
+*type* or unknown `complexity` returns `422`; an out-of-range value (e.g. an
+unknown background, `sections` below 1) returns `400` with a JSON `detail`. The
+interactive schema is at <http://127.0.0.1:18990/docs>.
+
+The fill endpoint folds a one-line report summary into the `X-Injection-Report`
+header. For the full multi-line report, call
+`POST /api/generate/fill?include_report=true`, which returns JSON
+`{filename, report, file_base64}` instead of streaming the bytes.
+
+The API is unauthenticated and local-first, like the UI; counts are not yet
+upper-bounded. Authentication, hosted deployment, and resource caps are tracked
+for a future ADR.
+
 ## Develop
 
 ```bash
@@ -206,3 +243,5 @@ Architecture decision records:
 - [ADR-001](design/ADR-001-template-driven-office-file-generator.md) - the
   generator core (inject + generate modes).
 - [ADR-002](design/ADR-002-fastapi-htmx-ui.md) - the FastAPI + HTMX web UI.
+- [ADR-007](design/ADR-007-json-api-file-generation.md) - the JSON API for
+  programmatic file generation.

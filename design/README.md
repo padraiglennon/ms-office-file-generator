@@ -8,3 +8,4 @@
 | [ADR-004](ADR-004-excel-workbook-generator.md) | Complexity-driven Excel workbook generator | Done | [#4](https://github.com/padraiglennon/ms-office-file-generator/issues/4) |
 | [ADR-005](ADR-005-pdf-generator.md) | Complexity-driven PDF generator | Done | [#6](https://github.com/padraiglennon/ms-office-file-generator/issues/6) |
 | [ADR-006](ADR-006-markdown-generator.md) | Complexity-driven Markdown generator | Done | [#7](https://github.com/padraiglennon/ms-office-file-generator/issues/7) |
+| [ADR-007](ADR-007-json-api-file-generation.md) | JSON API for programmatic file generation | Done | [#9](https://github.com/padraiglennon/ms-office-file-generator/issues/9) |

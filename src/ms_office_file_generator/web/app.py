@@ -18,15 +18,8 @@ from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from ms_office_file_generator.core import (
-    ConfigError,
-    generate,
-    generate_deck,
-    generate_doc,
-    generate_markdown,
-    generate_pdf,
-    generate_sheet,
-)
+from ms_office_file_generator.core import ConfigError, generate
+from ms_office_file_generator.web import service
 from ms_office_file_generator.web.forms import (
     deck_fields,
     doc_fields,
@@ -102,6 +95,21 @@ def create_app(
             },
         )
 
+    def _generate(request: Request, kind_key: str, **params: object) -> HTMLResponse:
+        # Run the shared service into the per-request workdir, store the result
+        # under a token, and render the download partial. The kind's MIME and
+        # download name come from the service, so UI and API stay in lockstep.
+        kind = service.file_kind(kind_key)
+        scratch = workdir / f"{kind.key}-{secrets.token_hex(4)}"
+        scratch.mkdir()
+        try:
+            out = service.generate_to_path(kind, scratch, **params)
+        except (ValueError, FileNotFoundError) as exc:
+            return _error(templates, request, str(exc))
+
+        token = _store(out, kind.download_name)
+        return _result(templates, request, token, kind.download_name, report=None)
+
     @app.post("/generate/deck", response_class=HTMLResponse)
     def generate_deck_route(
         request: Request,
@@ -119,22 +127,16 @@ def create_app(
         else:
             background_color = ""
 
-        out = workdir / f"deck-{secrets.token_hex(4)}.pptx"
-        try:
-            generate_deck(
-                str(out),
-                complexity=complexity,
-                slides=slides,
-                seed=seed,
-                background=background,
-                background_color=background_color or None,
-                video_url=video_url or _video_default(),
-            )
-        except (ValueError, FileNotFoundError) as exc:
-            return _error(templates, request, str(exc))
-
-        token = _store(out, "deck.pptx")
-        return _result(templates, request, token, "deck.pptx", report=None)
+        return _generate(
+            request,
+            "deck",
+            complexity=complexity,
+            slides=slides,
+            seed=seed,
+            background=background,
+            background_color=background_color or None,
+            video_url=video_url or _video_default(),
+        )
 
     @app.post("/generate/doc", response_class=HTMLResponse)
     def generate_doc_route(
@@ -143,14 +145,9 @@ def create_app(
         sections: int = Form(5),
         seed: int = Form(0),
     ) -> HTMLResponse:
-        out = workdir / f"document-{secrets.token_hex(4)}.docx"
-        try:
-            generate_doc(str(out), complexity=complexity, sections=sections, seed=seed)
-        except ValueError as exc:
-            return _error(templates, request, str(exc))
-
-        token = _store(out, "document.docx")
-        return _result(templates, request, token, "document.docx", report=None)
+        return _generate(
+            request, "doc", complexity=complexity, sections=sections, seed=seed
+        )
 
     @app.post("/generate/sheet", response_class=HTMLResponse)
     def generate_sheet_route(
@@ -159,14 +156,9 @@ def create_app(
         sheets: int = Form(3),
         seed: int = Form(0),
     ) -> HTMLResponse:
-        out = workdir / f"workbook-{secrets.token_hex(4)}.xlsx"
-        try:
-            generate_sheet(str(out), complexity=complexity, sheets=sheets, seed=seed)
-        except ValueError as exc:
-            return _error(templates, request, str(exc))
-
-        token = _store(out, "workbook.xlsx")
-        return _result(templates, request, token, "workbook.xlsx", report=None)
+        return _generate(
+            request, "sheet", complexity=complexity, sheets=sheets, seed=seed
+        )
 
     @app.post("/generate/pdf", response_class=HTMLResponse)
     def generate_pdf_route(
@@ -175,14 +167,9 @@ def create_app(
         sections: int = Form(5),
         seed: int = Form(0),
     ) -> HTMLResponse:
-        out = workdir / f"document-{secrets.token_hex(4)}.pdf"
-        try:
-            generate_pdf(str(out), complexity=complexity, sections=sections, seed=seed)
-        except ValueError as exc:
-            return _error(templates, request, str(exc))
-
-        token = _store(out, "document.pdf")
-        return _result(templates, request, token, "document.pdf", report=None)
+        return _generate(
+            request, "pdf", complexity=complexity, sections=sections, seed=seed
+        )
 
     @app.post("/generate/md", response_class=HTMLResponse)
     def generate_markdown_route(
@@ -191,16 +178,9 @@ def create_app(
         sections: int = Form(5),
         seed: int = Form(0),
     ) -> HTMLResponse:
-        out = workdir / f"document-{secrets.token_hex(4)}.md"
-        try:
-            generate_markdown(
-                str(out), complexity=complexity, sections=sections, seed=seed
-            )
-        except ValueError as exc:
-            return _error(templates, request, str(exc))
-
-        token = _store(out, "document.md")
-        return _result(templates, request, token, "document.md", report=None)
+        return _generate(
+            request, "markdown", complexity=complexity, sections=sections, seed=seed
+        )
 
     @app.post("/generate/fill", response_class=HTMLResponse)
     async def generate_fill_route(
@@ -226,6 +206,10 @@ def create_app(
 
         token = _store(out, f"filled{template_path.suffix}")
         return _result(templates, request, token, out.name, report=report.render())
+
+    from ms_office_file_generator.web.api import create_api_router
+
+    app.include_router(create_api_router(max_upload_bytes=max_upload_bytes))
 
     @app.get("/download/{token}")
     def download(token: str) -> FileResponse:
