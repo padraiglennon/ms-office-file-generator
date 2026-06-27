@@ -182,6 +182,13 @@ def test_index_has_tabs(client) -> None:
     assert "showPanel(" in html  # the toggle script
 
 
+def test_index_has_header_nav_links(client) -> None:
+    html = client.get("/").text
+    assert 'class="header-nav"' in html
+    assert 'href="/docs"' in html  # FastAPI Swagger UI
+    assert "padraiglennon.github.io/common-file-generator" in html  # Pages docs site
+
+
 def test_index_has_document_tab(client) -> None:
     html = client.get("/").text
     assert 'id="tab-doc"' in html and 'id="panel-doc"' in html

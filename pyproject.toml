@@ -20,6 +20,12 @@ web = [
     "python-multipart>=0.0.9",
     "jinja2>=3.1.4",
 ]
+# Docs-site toolchain. Used only to build the GitHub Pages site in CI; kept out
+# of `web` so it never enters the runtime container image.
+docs = [
+    "mkdocs>=1.6.0",
+    "mkdocs-material>=9.5.0",
+]
 
 [project.scripts]
 generate = "common_file_generator.cli:main"

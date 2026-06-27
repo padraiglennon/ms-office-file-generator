@@ -5,7 +5,7 @@ not need any programming knowledge - copy the sample, change the values, and
 save. The structure is always the same three sections, and **any section you
 don't need can be left out**.
 
-A working example lives at [`configs/sample-deck.json`](../configs/sample-deck.json).
+A working example lives at [`configs/sample-deck.json`](https://github.com/padraiglennon/common-file-generator/blob/main/configs/sample-deck.json).
 
 ```json
 {

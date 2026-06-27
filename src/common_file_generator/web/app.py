@@ -7,6 +7,7 @@ by an opaque token, and renders an HTMX partial with a download link.
 
 from __future__ import annotations
 
+import os
 import secrets
 import tempfile
 import time
@@ -36,6 +37,8 @@ _CONFIG_EXTS = {".json"}
 _DEFAULT_MAX_UPLOAD_MB = 25
 _DEFAULT_TTL_SECONDS = 3600  # generated files are swept after one hour
 _UPLOAD_CHUNK = 64 * 1024
+# Hosted documentation site (GitHub Pages). Overridable for forks/mirrors.
+_DOCS_URL = "https://padraiglennon.github.io/common-file-generator/"
 
 
 @dataclass
@@ -61,6 +64,7 @@ def create_app(
     resolved from the environment.
     """
     caps = caps or Caps.from_env()
+    docs_url = os.getenv("COMMON_FILE_GEN_DOCS_URL", _DOCS_URL)
     app = FastAPI(title="Common File Generator")
     templates = Jinja2Templates(directory=str(_HERE / "templates"))
     app.mount("/static", StaticFiles(directory=str(_HERE / "static")), name="static")
@@ -103,6 +107,7 @@ def create_app(
                 "md_fields": md_fields(),
                 "max_upload_mb": max_upload_mb,
                 "version": asset_version,
+                "docs_url": docs_url,
             },
         )
 

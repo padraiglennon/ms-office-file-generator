@@ -1,0 +1,24 @@
+site_name: Common File Generator
+site_description: Test sample file generator (PPTX/DOCX/XLSX/PDF/Markdown)
+site_url: https://padraiglennon.github.io/common-file-generator/
+repo_url: https://github.com/padraiglennon/common-file-generator
+repo_name: padraiglennon/common-file-generator
+docs_dir: docs
+
+theme:
+  name: material
+  palette:
+    primary: blue
+  features:
+    - navigation.top
+    - content.code.copy
+
+nav:
+  - Home: index.md
+  - Guides:
+      - Golden templates: golden-file-guide.md
+      - Data file (JSON): config-guide.md
+
+markdown_extensions:
+  - admonition
+  - pymdownx.superfences

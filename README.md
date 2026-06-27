@@ -169,6 +169,11 @@ After every `fill` run a plain-English **report** is written next to the output
   tables, and picture spots in PowerPoint / Word / Excel.
 - [The data file (JSON), field by field](docs/config-guide.md).
 
+These guides are also published as a site at
+<https://padraiglennon.github.io/common-file-generator/>, and are reachable from
+the web UI via the **Docs** link in the header (the **API** link opens the live
+Swagger reference at `/docs`).
+
 ## Web UI
 
 A simple browser UI (FastAPI + HTMX) drives both modes - no command line.
@@ -208,6 +213,10 @@ overridable via environment variables:
 Over-large requests are rejected `422` (counts/composite) before any work;
 generation exceeding the time limit returns `503`, and an oversized output `400`.
 The timeout and size guards apply to the UI too.
+
+The UI's **Docs** header link points at the hosted documentation site; the URL
+defaults to the GitHub Pages address and is overridable via the
+`COMMON_FILE_GEN_DOCS_URL` env var (useful for forks or mirrors).
 
 HTMX is vendored at `src/common_file_generator/web/static/htmx.min.js` (see
 `VENDOR.md` there for the pinned version and how to update it).
@@ -307,3 +316,5 @@ Architecture decision records:
   programmatic file generation.
 - [ADR-008](design/ADR-008-containerize-api-and-ui.md) - containerizing the API
   and UI for CI and local development.
+- [ADR-011](design/ADR-011-docs-github-pages.md) - hosting the docs on GitHub
+  Pages (built by mkdocs in CI) and linking API + docs from the UI.
