@@ -4,11 +4,15 @@ One model per generate-mode file type, mirroring the matching ``core`` function
 signature.
 
 Validation split: **structural** problems (wrong type, unknown ``complexity``)
-are rejected by Pydantic as ``422``; **value bounds** (counts too small) are left
-to the core, which raises ``ValueError`` and surfaces as ``400``. This keeps the
-bound errors and their messages identical across the API, the UI, and the CLI
-rather than duplicating them here. No upper bounds are imposed (see ADR-007);
-resource caps for hosted use are tracked separately.
+are rejected by Pydantic as ``422``; **lower value bounds** (counts too small)
+are left to the core, which raises ``ValueError`` and surfaces as ``400``. This
+keeps the lower-bound errors and their messages identical across the API, the UI,
+and the CLI rather than duplicating them here.
+
+**Upper bounds** (ADR-010) are not expressed as Pydantic ``Field(le=)`` here:
+the caps are env-configurable per app instance, so they are validated in the API
+router against the resolved :class:`~common_file_generator.web.caps.Caps` and also
+surface as ``422``.
 """
 
 from __future__ import annotations

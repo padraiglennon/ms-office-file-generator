@@ -15,6 +15,7 @@ pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient  # noqa: E402
 
 from common_file_generator.web.app import create_app  # noqa: E402
+from common_file_generator.web.caps import Caps  # noqa: E402
 
 _OFFICE = "application/vnd.openxmlformats-officedocument"
 
@@ -214,3 +215,72 @@ def test_api_leaves_no_files_behind(client) -> None:
     c = TestClient(app)
     c.post("/api/generate/markdown", json={"sections": 2})
     assert app.state.artifacts == {}
+
+
+# --- Resource caps and runtime guards (ADR-010) ---
+
+
+def _capped_client(**caps_kwargs) -> TestClient:
+    return TestClient(create_app(caps=Caps(**caps_kwargs)))
+
+
+def test_over_per_field_cap_returns_422() -> None:
+    c = _capped_client(max_slides=5)
+    resp = c.post("/api/generate/deck", json={"slides": 6})
+    assert resp.status_code == 422
+    detail = resp.json()["detail"]
+    assert "slides" in detail and "maximum of 5" in detail
+
+
+def test_within_per_field_cap_still_generates() -> None:
+    c = _capped_client(max_slides=5)
+    resp = c.post("/api/generate/deck", json={"slides": 3, "complexity": "minimal"})
+    assert resp.status_code == 200
+
+
+def test_composite_cost_over_budget_returns_422() -> None:
+    # Each field is under its per-field cap, but sheets*tables*rows*cols exceeds
+    # the composite budget.
+    c = _capped_client(max_sheets=100, max_rows=5000, max_cols=100, max_cost=1000)
+    resp = c.post(
+        "/api/generate/sheet",
+        json={"sheets": 5, "rows": 50, "cols": 10, "complexity": "minimal"},
+    )
+    assert resp.status_code == 422
+    assert "cost" in resp.json()["detail"]
+
+
+def test_composite_cost_uses_complexity_defaults() -> None:
+    # No rows/cols supplied: the cost uses the per-complexity defaults, so a tiny
+    # budget still rejects.
+    c = _capped_client(max_cost=10)
+    resp = c.post("/api/generate/doc", json={"sections": 20, "complexity": "maximum"})
+    assert resp.status_code == 422
+
+
+def test_generation_timeout_returns_503() -> None:
+    # A zero-second budget trips the timeout guard before any real work finishes.
+    c = _capped_client(gen_timeout_s=0)
+    resp = c.post("/api/generate/doc", json={"sections": 1})
+    assert resp.status_code == 503
+    assert "time limit" in resp.json()["detail"]
+
+
+def test_output_too_large_returns_400() -> None:
+    # A 0 MB output cap rejects any non-empty file after generation.
+    c = _capped_client(max_output_mb=0)
+    resp = c.post("/api/generate/markdown", json={"sections": 1})
+    assert resp.status_code == 400
+    assert "exceeds" in resp.json()["detail"]
+
+
+def test_fill_respects_timeout_guard(template_bytes, config_bytes) -> None:
+    c = TestClient(create_app(caps=Caps(gen_timeout_s=0)))
+    resp = c.post(
+        "/api/generate/fill",
+        files={
+            "template": ("t.pptx", template_bytes, "application/octet-stream"),
+            "config": ("c.json", config_bytes, "application/json"),
+        },
+    )
+    assert resp.status_code == 503

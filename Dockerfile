@@ -28,8 +28,8 @@ RUN useradd --create-home --uid 10001 app
 
 ENV PATH="/opt/venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
-    MOFG_HOST=0.0.0.0 \
-    MOFG_PORT=18990
+    COMMON_FILE_GEN_HOST=0.0.0.0 \
+    COMMON_FILE_GEN_PORT=18990
 
 COPY --from=build /opt/venv /opt/venv
 COPY --from=build /app/src /app/src
@@ -40,8 +40,8 @@ USER app
 EXPOSE 18990
 
 HEALTHCHECK --interval=10s --timeout=3s --start-period=10s --retries=5 \
-    CMD ["python", "-c", "import os,urllib.request,sys; sys.exit(0 if urllib.request.urlopen(f\"http://127.0.0.1:{os.environ.get('MOFG_PORT','18990')}/health\").status==200 else 1)"]
+    CMD ["python", "-c", "import os,urllib.request,sys; sys.exit(0 if urllib.request.urlopen(f\"http://127.0.0.1:{os.environ.get('COMMON_FILE_GEN_PORT','18990')}/health\").status==200 else 1)"]
 
-# Host and port come from MOFG_HOST / MOFG_PORT (set above); override at run time
-# with -e MOFG_PORT=... and the matching -p mapping.
+# Host and port come from COMMON_FILE_GEN_HOST / COMMON_FILE_GEN_PORT (set above);
+# override at run time with -e COMMON_FILE_GEN_PORT=... and the matching -p mapping.
 CMD ["gen-ui"]

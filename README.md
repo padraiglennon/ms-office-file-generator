@@ -184,8 +184,30 @@ and a JSON config and shows the plain-English report.
 
 The server binds `127.0.0.1` by default. Pass `--host 0.0.0.0` to expose it on
 the network (it is unauthenticated - your choice). The fill-mode upload size cap
-is set with `--max-upload-mb` or the `MOFG_MAX_UPLOAD_MB` env var (default 25).
-Generated files are temporary and swept after one hour.
+is set with `--max-upload-mb` or the `COMMON_FILE_GEN_MAX_UPLOAD_MB` env var
+(default 25). Generated files are temporary and swept after one hour.
+
+### Resource caps (hosted use)
+
+The JSON API bounds how large a single request can be, so one call cannot pin
+CPU/memory once the API is hosted (ADR-010). All have generous defaults and are
+overridable via environment variables:
+
+| Variable | Default | Bounds |
+| --- | --- | --- |
+| `COMMON_FILE_GEN_MAX_SLIDES` | 200 | deck `slides` |
+| `COMMON_FILE_GEN_MAX_SECTIONS` | 200 | doc/pdf/markdown `sections` |
+| `COMMON_FILE_GEN_MAX_SHEETS` | 100 | sheet `sheets` |
+| `COMMON_FILE_GEN_MAX_ROWS` | 5000 | sheet `rows` |
+| `COMMON_FILE_GEN_MAX_COLS` | 100 | sheet `cols` |
+| `COMMON_FILE_GEN_MAX_BLOCKS_PER_SECTION` | 50 | doc/pdf/markdown `blocks_per_section` |
+| `COMMON_FILE_GEN_MAX_COST` | 2000000 | composite cross-field budget |
+| `COMMON_FILE_GEN_GEN_TIMEOUT_S` | 30 | per-request generation wall-clock |
+| `COMMON_FILE_GEN_MAX_OUTPUT_MB` | 50 | generated file size |
+
+Over-large requests are rejected `422` (counts/composite) before any work;
+generation exceeding the time limit returns `503`, and an oversized output `400`.
+The timeout and size guards apply to the UI too.
 
 HTMX is vendored at `src/common_file_generator/web/static/htmx.min.js` (see
 `VENDOR.md` there for the pinned version and how to update it).
@@ -246,10 +268,10 @@ tag (e.g. `:v0.1.0`) for reproducible builds. The image is multi-arch
 (linux/amd64 + linux/arm64). The container binds `0.0.0.0` and is
 unauthenticated - run it only on a trusted/isolated network.
 
-To use a different in-container port, set `MOFG_PORT` and map it to match:
+To use a different in-container port, set `COMMON_FILE_GEN_PORT` and map it to match:
 
 ```bash
-docker run --rm -e MOFG_PORT=9100 -p 9100:9100 \
+docker run --rm -e COMMON_FILE_GEN_PORT=9100 -p 9100:9100 \
   ghcr.io/padraiglennon/common-file-generator:latest
 ```
 

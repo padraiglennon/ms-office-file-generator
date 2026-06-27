@@ -11,3 +11,4 @@
 | [ADR-007](ADR-007-json-api-file-generation.md) | JSON API for programmatic file generation | Done | [#9](https://github.com/padraiglennon/common-file-generator/issues/9) |
 | [ADR-008](ADR-008-containerize-api-and-ui.md) | Containerize the API + UI for CI and local development | Done | [#13](https://github.com/padraiglennon/common-file-generator/issues/13) |
 | [ADR-009](ADR-009-rename-to-common-file-generator.md) | Rename the project to common-file-generator | Done | [#14](https://github.com/padraiglennon/common-file-generator/issues/14) |
+| [ADR-010](ADR-010-resource-caps-hosted-generation.md) | Resource caps for hosted file generation | Done | [#11](https://github.com/padraiglennon/common-file-generator/issues/11) |

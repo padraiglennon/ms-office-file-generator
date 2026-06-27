@@ -18,8 +18,9 @@ from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from common_file_generator.core import ConfigError, generate
+from common_file_generator.core import ConfigError, Report, generate
 from common_file_generator.web import service
+from common_file_generator.web.caps import Caps
 from common_file_generator.web.forms import (
     deck_fields,
     doc_fields,
@@ -27,6 +28,7 @@ from common_file_generator.web.forms import (
     pdf_fields,
     sheet_fields,
 )
+from common_file_generator.web.service import GenerationTimeout, OutputTooLarge
 
 _HERE = Path(__file__).parent
 _TEMPLATE_EXTS = {".pptx", ".docx", ".xlsx"}
@@ -49,17 +51,21 @@ def create_app(
     *,
     max_upload_mb: int = _DEFAULT_MAX_UPLOAD_MB,
     ttl_seconds: int = _DEFAULT_TTL_SECONDS,
+    caps: Caps | None = None,
 ) -> FastAPI:
     """Build the FastAPI app.
 
     ``max_upload_mb`` caps fill-mode uploads; ``ttl_seconds`` is how long a
-    generated file is kept before it is swept on the next request.
+    generated file is kept before it is swept on the next request. ``caps``
+    carries the ADR-010 resource caps and runtime guards; it defaults to values
+    resolved from the environment.
     """
+    caps = caps or Caps.from_env()
     app = FastAPI(title="Common File Generator")
     templates = Jinja2Templates(directory=str(_HERE / "templates"))
     app.mount("/static", StaticFiles(directory=str(_HERE / "static")), name="static")
 
-    workdir = Path(tempfile.mkdtemp(prefix="mofg-web-"))
+    workdir = Path(tempfile.mkdtemp(prefix="cfg-web-"))
     artifacts: dict[str, _Artifact] = {}
     max_upload_bytes = max_upload_mb * 1024 * 1024
 
@@ -108,8 +114,10 @@ def create_app(
         scratch = workdir / f"{kind.key}-{secrets.token_hex(4)}"
         scratch.mkdir()
         try:
-            out = service.generate_to_path(kind, scratch, **params)
-        except (ValueError, FileNotFoundError) as exc:
+            out = service.generate_to_path(kind, scratch, caps, **params)
+        except GenerationTimeout as exc:
+            return _error(templates, request, str(exc), status_code=503)
+        except (OutputTooLarge, ValueError, FileNotFoundError) as exc:
             return _error(templates, request, str(exc))
 
         token = _store(out, kind.download_name)
@@ -204,17 +212,27 @@ def create_app(
             return _error(templates, request, str(exc))
 
         out = workdir / f"filled-{secrets.token_hex(4)}{template_path.suffix}"
+        report_box: dict[str, Report] = {}
+
+        def _build() -> Path:
+            report_box["report"] = generate(template_path, config_path, out)
+            return out
+
         try:
-            report = generate(template_path, config_path, out)
-        except (ConfigError, FileNotFoundError, ValueError) as exc:
+            service.run_guarded(_build, caps)
+        except GenerationTimeout as exc:
+            return _error(templates, request, str(exc), status_code=503)
+        except (OutputTooLarge, ConfigError, FileNotFoundError, ValueError) as exc:
             return _error(templates, request, str(exc))
 
         token = _store(out, f"filled{template_path.suffix}")
-        return _result(templates, request, token, out.name, report=report.render())
+        return _result(
+            templates, request, token, out.name, report=report_box["report"].render()
+        )
 
     from common_file_generator.web.api import create_api_router
 
-    app.include_router(create_api_router(max_upload_bytes=max_upload_bytes))
+    app.include_router(create_api_router(max_upload_bytes=max_upload_bytes, caps=caps))
 
     @app.get("/download/{token}")
     def download(token: str) -> FileResponse:
@@ -295,9 +313,15 @@ def _result(
     )
 
 
-def _error(templates: Jinja2Templates, request: Request, message: str) -> HTMLResponse:
+def _error(
+    templates: Jinja2Templates,
+    request: Request,
+    message: str,
+    *,
+    status_code: int = 400,
+) -> HTMLResponse:
     response = templates.TemplateResponse(
         request, "partials/error.html", {"message": message}
     )
-    response.status_code = 400
+    response.status_code = status_code
     return response

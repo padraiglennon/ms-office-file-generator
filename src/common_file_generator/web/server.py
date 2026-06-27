@@ -2,9 +2,11 @@
 
 Binds 127.0.0.1:18990 by default so the UI is not exposed on the network by
 accident. Pass ``--host 0.0.0.0`` to expose it (unauthenticated; your choice).
-Host and port also read from ``MOFG_HOST`` / ``MOFG_PORT`` (the container sets
-``MOFG_HOST=0.0.0.0``); the upload size cap from ``--max-upload-mb`` or
-``MOFG_MAX_UPLOAD_MB``. Explicit flags win over the environment.
+Host and port also read from ``COMMON_FILE_GEN_HOST`` / ``COMMON_FILE_GEN_PORT``
+(the container sets ``COMMON_FILE_GEN_HOST=0.0.0.0``); the upload size cap from
+``--max-upload-mb`` or ``COMMON_FILE_GEN_MAX_UPLOAD_MB``. Resource caps and
+runtime guards read from further ``COMMON_FILE_GEN_*`` vars (see
+:mod:`common_file_generator.web.caps`). Explicit flags win over the environment.
 """
 
 from __future__ import annotations
@@ -22,7 +24,7 @@ _DEFAULT_MAX_UPLOAD_MB = 25
 
 
 def _default_max_upload_mb() -> int:
-    raw = os.environ.get("MOFG_MAX_UPLOAD_MB")
+    raw = os.environ.get("COMMON_FILE_GEN_MAX_UPLOAD_MB")
     if raw is None:
         return _DEFAULT_MAX_UPLOAD_MB
     try:
@@ -33,7 +35,7 @@ def _default_max_upload_mb() -> int:
 
 
 def _default_port() -> int:
-    raw = os.environ.get("MOFG_PORT")
+    raw = os.environ.get("COMMON_FILE_GEN_PORT")
     if raw is None:
         return _DEFAULT_PORT
     try:
@@ -47,13 +49,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="gen-ui", description="Serve the Common File Generator web UI."
     )
-    parser.add_argument("--host", default=os.environ.get("MOFG_HOST", _DEFAULT_HOST))
+    parser.add_argument(
+        "--host", default=os.environ.get("COMMON_FILE_GEN_HOST", _DEFAULT_HOST)
+    )
     parser.add_argument("--port", type=int, default=_default_port())
     parser.add_argument(
         "--max-upload-mb",
         type=int,
         default=_default_max_upload_mb(),
-        help="Cap for fill-mode uploads (default 25; or MOFG_MAX_UPLOAD_MB).",
+        help=(
+            "Cap for fill-mode uploads (default 25; or COMMON_FILE_GEN_MAX_UPLOAD_MB)."
+        ),
     )
     return parser
 

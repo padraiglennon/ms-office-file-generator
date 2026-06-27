@@ -19,20 +19,46 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Response, UploadFile
 from fastapi.responses import JSONResponse
 
-from common_file_generator.core import ConfigError, generate
+from common_file_generator.core import ConfigError, Report, generate
 from common_file_generator.web import service
+from common_file_generator.web.caps import Caps, estimate_cost
 from common_file_generator.web.schemas import (
     DeckRequest,
     DocRequest,
     SectionRequest,
     SheetRequest,
 )
+from common_file_generator.web.service import GenerationTimeout, OutputTooLarge
 
 _REPORT_HEADER = "X-Injection-Report"
 
+# Per-field count caps to enforce, by request-kind. Each entry maps a request
+# field to the matching :class:`Caps` attribute. Validated in the router (not via
+# Pydantic ``Field(le=)``) so the bounds stay env-configurable per app instance
+# while still surfacing as ``422`` (see ADR-010).
+_SECTION_CAPS = (
+    ("sections", "max_sections"),
+    ("blocks_per_section", "max_blocks_per_section"),
+)
+_FIELD_CAPS: dict[str, tuple[tuple[str, str], ...]] = {
+    "deck": (("slides", "max_slides"),),
+    "doc": _SECTION_CAPS,
+    "pdf": _SECTION_CAPS,
+    "markdown": _SECTION_CAPS,
+    "sheet": (
+        ("sheets", "max_sheets"),
+        ("rows", "max_rows"),
+        ("cols", "max_cols"),
+    ),
+}
 
-def create_api_router(*, max_upload_bytes: int) -> APIRouter:
-    """Build the ``/api`` router. ``max_upload_bytes`` caps fill-mode uploads."""
+
+def create_api_router(*, max_upload_bytes: int, caps: Caps) -> APIRouter:
+    """Build the ``/api`` router.
+
+    ``max_upload_bytes`` caps fill-mode uploads; ``caps`` carries the ADR-010
+    per-field/composite count caps and the runtime guards.
+    """
     from common_file_generator.web.app import (
         _CONFIG_EXTS,
         _TEMPLATE_EXTS,
@@ -43,10 +69,39 @@ def create_api_router(*, max_upload_bytes: int) -> APIRouter:
 
     router = APIRouter(prefix="/api", tags=["generate"])
 
+    def _check_caps(kind_key: str, params: dict[str, object]) -> None:
+        # Per-field upper bounds, then the cross-field composite cost budget.
+        # Both reject as 422 (over-large is a request-shape problem) before any
+        # generation work starts.
+        for field, cap_attr in _FIELD_CAPS.get(kind_key, ()):
+            value = params.get(field)
+            if value is None:
+                continue
+            limit = getattr(caps, cap_attr)
+            if value > limit:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"'{field}' ({value}) exceeds the maximum of {limit}.",
+                )
+        cost = estimate_cost(kind_key, params)
+        if cost > caps.max_cost:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"Requested size (cost {cost}) exceeds the maximum of "
+                    f"{caps.max_cost}."
+                ),
+            )
+
     def _stream(kind_key: str, **params: object) -> Response:
+        _check_caps(kind_key, params)
         kind = service.file_kind(kind_key)
         try:
-            data = service.generate_bytes(kind, **params)
+            data = service.generate_bytes(kind, caps, **params)
+        except GenerationTimeout as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        except OutputTooLarge as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         except (ValueError, FileNotFoundError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return Response(
@@ -116,7 +171,7 @@ def create_api_router(*, max_upload_bytes: int) -> APIRouter:
         config: UploadFile,
         include_report: bool = False,
     ) -> Response:
-        with tempfile.TemporaryDirectory(prefix="mofg-api-fill-") as tmp:
+        with tempfile.TemporaryDirectory(prefix="cfg-api-fill-") as tmp:
             workdir = Path(tmp)
             try:
                 template_path = await _save_upload(
@@ -129,11 +184,22 @@ def create_api_router(*, max_upload_bytes: int) -> APIRouter:
                 raise HTTPException(status_code=400, detail=str(exc)) from exc
 
             out = workdir / f"filled{template_path.suffix}"
+            report_box: dict[str, Report] = {}
+
+            def _build() -> Path:
+                report_box["report"] = generate(template_path, config_path, out)
+                return out
+
             try:
-                report = generate(template_path, config_path, out)
+                service.run_guarded(_build, caps)
+            except GenerationTimeout as exc:
+                raise HTTPException(status_code=503, detail=str(exc)) from exc
+            except OutputTooLarge as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
             except (ConfigError, FileNotFoundError, ValueError) as exc:
                 raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+            report = report_box["report"]
             data = out.read_bytes()
 
         filename = f"filled{template_path.suffix}"

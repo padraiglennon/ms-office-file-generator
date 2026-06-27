@@ -16,6 +16,7 @@ pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient  # noqa: E402
 
 from common_file_generator.web.app import create_app  # noqa: E402
+from common_file_generator.web.caps import Caps  # noqa: E402
 from common_file_generator.web.forms import deck_fields  # noqa: E402
 
 
@@ -209,6 +210,26 @@ def test_generate_document_invalid_sections_errors(client) -> None:
     )
     assert resp.status_code == 400
     assert "Could not generate" in resp.text
+
+
+def test_ui_generation_timeout_returns_503() -> None:
+    # The runtime guards (ADR-010) apply to the UI path too, via the shared
+    # service. A zero-second budget trips the timeout.
+    c = TestClient(create_app(caps=Caps(gen_timeout_s=0)))
+    resp = c.post(
+        "/generate/doc",
+        data={"complexity": "standard", "sections": "1", "seed": "0"},
+    )
+    assert resp.status_code == 503
+
+
+def test_ui_output_too_large_errors() -> None:
+    c = TestClient(create_app(caps=Caps(max_output_mb=0)))
+    resp = c.post(
+        "/generate/md",
+        data={"complexity": "standard", "sections": "1", "seed": "0"},
+    )
+    assert resp.status_code == 400
 
 
 def test_doc_fields_track_the_core() -> None:
@@ -434,7 +455,7 @@ def test_server_defaults_to_localhost_18990() -> None:
 
 
 def test_server_env_overrides_max_upload(monkeypatch) -> None:
-    monkeypatch.setenv("MOFG_MAX_UPLOAD_MB", "100")
+    monkeypatch.setenv("COMMON_FILE_GEN_MAX_UPLOAD_MB", "100")
     import importlib
 
     from common_file_generator.web import server
@@ -442,7 +463,7 @@ def test_server_env_overrides_max_upload(monkeypatch) -> None:
     importlib.reload(server)
     args = server.build_parser().parse_args([])
     assert args.max_upload_mb == 100
-    monkeypatch.delenv("MOFG_MAX_UPLOAD_MB")
+    monkeypatch.delenv("COMMON_FILE_GEN_MAX_UPLOAD_MB")
     importlib.reload(server)
 
 
@@ -455,8 +476,8 @@ def test_server_host_override() -> None:
 
 
 def test_server_env_overrides_host_and_port(monkeypatch) -> None:
-    monkeypatch.setenv("MOFG_HOST", "0.0.0.0")
-    monkeypatch.setenv("MOFG_PORT", "28990")
+    monkeypatch.setenv("COMMON_FILE_GEN_HOST", "0.0.0.0")
+    monkeypatch.setenv("COMMON_FILE_GEN_PORT", "28990")
     import importlib
 
     from common_file_generator.web import server
@@ -468,13 +489,13 @@ def test_server_env_overrides_host_and_port(monkeypatch) -> None:
     # An explicit flag still wins over the environment.
     flagged = server.build_parser().parse_args(["--port", "9000"])
     assert flagged.port == 9000
-    monkeypatch.delenv("MOFG_HOST")
-    monkeypatch.delenv("MOFG_PORT")
+    monkeypatch.delenv("COMMON_FILE_GEN_HOST")
+    monkeypatch.delenv("COMMON_FILE_GEN_PORT")
     importlib.reload(server)
 
 
 def test_server_ignores_invalid_env_port(monkeypatch) -> None:
-    monkeypatch.setenv("MOFG_PORT", "not-a-number")
+    monkeypatch.setenv("COMMON_FILE_GEN_PORT", "not-a-number")
     import importlib
 
     from common_file_generator.web import server
@@ -482,5 +503,5 @@ def test_server_ignores_invalid_env_port(monkeypatch) -> None:
     importlib.reload(server)
     args = server.build_parser().parse_args([])
     assert args.port == 18990  # falls back to the default
-    monkeypatch.delenv("MOFG_PORT")
+    monkeypatch.delenv("COMMON_FILE_GEN_PORT")
     importlib.reload(server)

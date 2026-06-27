@@ -10,7 +10,7 @@ services:
     ports:
       - "18990:18990"
     healthcheck:
-      test: ["CMD", "python", "-c", "import os,urllib.request,sys; sys.exit(0 if urllib.request.urlopen(f\"http://127.0.0.1:{os.environ.get('MOFG_PORT','18990')}/health\").status==200 else 1)"]
+      test: ["CMD", "python", "-c", "import os,urllib.request,sys; sys.exit(0 if urllib.request.urlopen(f\"http://127.0.0.1:{os.environ.get('COMMON_FILE_GEN_PORT','18990')}/health\").status==200 else 1)"]
       interval: 10s
       timeout: 3s
       retries: 5

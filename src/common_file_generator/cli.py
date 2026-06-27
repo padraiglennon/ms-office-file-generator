@@ -34,7 +34,7 @@ from common_file_generator.core import (
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="generate",
-        description="Produce test office/document files by injection or generation.",
+        description="Produce test files by injection or generation.",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
