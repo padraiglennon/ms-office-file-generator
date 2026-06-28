@@ -48,19 +48,24 @@ OCEAN = DocxTheme(
 
 SLATE = DocxTheme(
     name="slate",
-    heading_color=_rgb(0x2B3A42),
+    # A clear steel-blue, not a near-black charcoal, so the theme reads as
+    # distinctly slate-coloured on a plain (table-free) document.
+    heading_color=_rgb(0x41698F),
     body_color=_rgb(0x2E2E2E),
     accent_color=_rgb(0x5D7079),
-    table_header_fill=_rgb(0x2B3A42),
+    table_header_fill=_rgb(0x41698F),
     table_header_text=_rgb(0xFFFFFF),
 )
 
 SAND = DocxTheme(
     name="sand",
-    heading_color=_rgb(0x7A5230),
+    # A warm terracotta rather than a muddy brown, so sand is obviously distinct
+    # from slate and ocean even without a table or quote. The accent matches the
+    # heading so the quote text also clears WCAG AA (the older B07B3C did not).
+    heading_color=_rgb(0xA85820),
     body_color=_rgb(0x3A2E22),
-    accent_color=_rgb(0xB07B3C),
-    table_header_fill=_rgb(0x7A5230),
+    accent_color=_rgb(0xA85820),
+    table_header_fill=_rgb(0xA85820),
     table_header_text=_rgb(0xFFF6E9),
 )
 

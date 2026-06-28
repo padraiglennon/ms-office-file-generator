@@ -171,6 +171,44 @@ def test_ocean_mirrors_the_pptx_palette() -> None:
     assert str(OCEAN.body_color) == str(PPTX_OCEAN.body_color)
 
 
+def test_every_theme_clears_wcag_aa_on_its_backgrounds() -> None:
+    """AC#7: each theme's substantive text/background pairings clear WCAG AA.
+
+    Body text must clear 4.5:1 on the white page. Headings and table-header text
+    are large and bold, so they take AA's large-text floor of 3.0:1. The quote
+    accent is intentionally excluded: it is a decorative emphasis colour mirrored
+    from the brand palette (ocean's teal is 2.5:1 on white), not body copy whose
+    readability AA governs.
+    """
+    from common_file_generator.generators.docx_theme import THEMES
+
+    aa_body, aa_large = 4.5, 3.0
+    white = (0xFF, 0xFF, 0xFF)
+    for theme in THEMES.values():
+        assert _contrast(theme.heading_color, white) >= aa_large, theme.name
+        assert _contrast(theme.body_color, white) >= aa_body, theme.name
+        assert (
+            _contrast(theme.table_header_text, theme.table_header_fill) >= aa_large
+        ), theme.name
+
+
+def _contrast(fg: object, bg: object) -> float:
+    def channel(rgb: object) -> tuple[int, int, int]:
+        # docx RGBColor is a 3-byte value; index it for the components.
+        return (rgb[0], rgb[1], rgb[2]) if not isinstance(rgb, tuple) else rgb
+
+    def luminance(rgb: tuple[int, int, int]) -> float:
+        def lin(c: float) -> float:
+            c /= 255
+            return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+
+        r, g, b = (lin(v) for v in rgb)
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+    lo, hi = sorted((luminance(channel(fg)), luminance(channel(bg))))
+    return (hi + 0.05) / (lo + 0.05)
+
+
 def _texts(path: Path) -> list[str]:
     return [p.text for p in Document(str(path)).paragraphs]
 
