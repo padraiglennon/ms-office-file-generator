@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import base64
 import tempfile
+import threading
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Response, UploadFile
@@ -28,7 +29,11 @@ from common_file_generator.web.schemas import (
     SectionRequest,
     SheetRequest,
 )
-from common_file_generator.web.service import GenerationTimeout, OutputTooLarge
+from common_file_generator.web.service import (
+    ConcurrencyLimited,
+    GenerationTimeout,
+    OutputTooLarge,
+)
 
 _REPORT_HEADER = "X-Injection-Report"
 
@@ -53,11 +58,18 @@ _FIELD_CAPS: dict[str, tuple[tuple[str, str], ...]] = {
 }
 
 
-def create_api_router(*, max_upload_bytes: int, caps: Caps) -> APIRouter:
+def create_api_router(
+    *,
+    max_upload_bytes: int,
+    caps: Caps,
+    limiter: threading.BoundedSemaphore | None = None,
+) -> APIRouter:
     """Build the ``/api`` router.
 
     ``max_upload_bytes`` caps fill-mode uploads; ``caps`` carries the ADR-010
-    per-field/composite count caps and the runtime guards.
+    per-field/composite count caps and the runtime guards; ``limiter`` is the
+    process-wide generation semaphore for the ADR-013 concurrency cap (shared
+    with the UI, so the cap is global across both front-ends).
     """
     from common_file_generator.web.app import (
         _CONFIG_EXTS,
@@ -97,8 +109,8 @@ def create_api_router(*, max_upload_bytes: int, caps: Caps) -> APIRouter:
         _check_caps(kind_key, params)
         kind = service.file_kind(kind_key)
         try:
-            data = service.generate_bytes(kind, caps, **params)
-        except GenerationTimeout as exc:
+            data = service.generate_bytes(kind, caps, limiter, **params)
+        except (GenerationTimeout, ConcurrencyLimited) as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
         except OutputTooLarge as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -192,8 +204,8 @@ def create_api_router(*, max_upload_bytes: int, caps: Caps) -> APIRouter:
                 return out
 
             try:
-                service.run_guarded(_build, caps)
-            except GenerationTimeout as exc:
+                service.run_guarded(_build, caps, limiter)
+            except (GenerationTimeout, ConcurrencyLimited) as exc:
                 raise HTTPException(status_code=503, detail=str(exc)) from exc
             except OutputTooLarge as exc:
                 raise HTTPException(status_code=400, detail=str(exc)) from exc

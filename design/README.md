@@ -14,3 +14,4 @@
 | [ADR-010](ADR-010-resource-caps-hosted-generation.md) | Resource caps for hosted file generation | Done | [#11](https://github.com/padraiglennon/common-file-generator/issues/11) |
 | [ADR-011](ADR-011-docs-github-pages.md) | Documentation hosting via GitHub Pages (mkdocs) + UI links | Done | [#16](https://github.com/padraiglennon/common-file-generator/issues/16) |
 | [ADR-012](ADR-012-word-generator-theming.md) | Themed styling for the Word document generator | Done | [#5](https://github.com/padraiglennon/common-file-generator/issues/5) |
+| [ADR-013](ADR-013-concurrency-cap-hosted-generation.md) | Global concurrency cap for hosted file generation | Done | [#15](https://github.com/padraiglennon/common-file-generator/issues/15) |

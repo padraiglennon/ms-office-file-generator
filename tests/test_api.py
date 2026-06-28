@@ -315,3 +315,62 @@ def test_fill_respects_timeout_guard(template_bytes, config_bytes) -> None:
         },
     )
     assert resp.status_code == 503
+
+
+# --- Global concurrency cap (ADR-013) ---
+
+
+def _single_slot_app():
+    # One slot, zero wait: with the slot held, the next request must 503 at once.
+    return create_app(caps=Caps(max_concurrent=1, acquire_timeout_s=0))
+
+
+def test_concurrency_full_returns_503() -> None:
+    app = _single_slot_app()
+    c = TestClient(app)
+    # Occupy the only generation slot, then a request finds none free.
+    assert app.state.limiter.acquire(timeout=0)
+    try:
+        resp = c.post("/api/generate/markdown", json={"sections": 1})
+    finally:
+        app.state.limiter.release()
+    assert resp.status_code == 503
+    assert "busy" in resp.json()["detail"]
+
+
+def test_slot_released_after_success() -> None:
+    # A normal request returns its slot, so the next one still succeeds.
+    app = _single_slot_app()
+    c = TestClient(app)
+    assert c.post("/api/generate/markdown", json={"sections": 1}).status_code == 200
+    assert c.post("/api/generate/markdown", json={"sections": 1}).status_code == 200
+
+
+def test_slot_released_after_error() -> None:
+    # An over-cap request (422) must not consume a slot; the limiter is acquired
+    # only inside run_guarded, after the per-field check, but a failed generation
+    # path must still release. Force a generation error and confirm capacity.
+    app = create_app(caps=Caps(max_concurrent=1, acquire_timeout_s=0, max_output_mb=0))
+    c = TestClient(app)
+    # max_output_mb=0 makes generation raise OutputTooLarge (400) after building.
+    assert c.post("/api/generate/markdown", json={"sections": 1}).status_code == 400
+    # The slot was released despite the error: a second attempt reaches the same
+    # guard rather than 503-ing on a leaked slot.
+    assert c.post("/api/generate/markdown", json={"sections": 1}).status_code == 400
+
+
+def test_fill_respects_concurrency_cap(template_bytes, config_bytes) -> None:
+    app = _single_slot_app()
+    c = TestClient(app)
+    assert app.state.limiter.acquire(timeout=0)
+    try:
+        resp = c.post(
+            "/api/generate/fill",
+            files={
+                "template": ("t.pptx", template_bytes, "application/octet-stream"),
+                "config": ("c.json", config_bytes, "application/json"),
+            },
+        )
+    finally:
+        app.state.limiter.release()
+    assert resp.status_code == 503

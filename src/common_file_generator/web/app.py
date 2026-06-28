@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 import secrets
 import tempfile
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -29,7 +30,11 @@ from common_file_generator.web.forms import (
     pdf_fields,
     sheet_fields,
 )
-from common_file_generator.web.service import GenerationTimeout, OutputTooLarge
+from common_file_generator.web.service import (
+    ConcurrencyLimited,
+    GenerationTimeout,
+    OutputTooLarge,
+)
 
 _HERE = Path(__file__).parent
 _TEMPLATE_EXTS = {".pptx", ".docx", ".xlsx"}
@@ -64,6 +69,10 @@ def create_app(
     resolved from the environment.
     """
     caps = caps or Caps.from_env()
+    # One process-wide semaphore caps simultaneous generations across both the UI
+    # and the API router and both the generate and fill paths (ADR-013). It is
+    # shared, mutable state, so it lives here rather than on the frozen Caps.
+    limiter = threading.BoundedSemaphore(caps.max_concurrent)
     docs_url = os.getenv("COMMON_FILE_GEN_DOCS_URL", _DOCS_URL)
     app = FastAPI(title="Common File Generator")
     templates = Jinja2Templates(directory=str(_HERE / "templates"))
@@ -119,8 +128,8 @@ def create_app(
         scratch = workdir / f"{kind.key}-{secrets.token_hex(4)}"
         scratch.mkdir()
         try:
-            out = service.generate_to_path(kind, scratch, caps, **params)
-        except GenerationTimeout as exc:
+            out = service.generate_to_path(kind, scratch, caps, limiter, **params)
+        except (GenerationTimeout, ConcurrencyLimited) as exc:
             return _error(templates, request, str(exc), status_code=503)
         except (OutputTooLarge, ValueError, FileNotFoundError) as exc:
             return _error(templates, request, str(exc))
@@ -230,8 +239,8 @@ def create_app(
             return out
 
         try:
-            service.run_guarded(_build, caps)
-        except GenerationTimeout as exc:
+            service.run_guarded(_build, caps, limiter)
+        except (GenerationTimeout, ConcurrencyLimited) as exc:
             return _error(templates, request, str(exc), status_code=503)
         except (OutputTooLarge, ConfigError, FileNotFoundError, ValueError) as exc:
             return _error(templates, request, str(exc))
@@ -243,7 +252,9 @@ def create_app(
 
     from common_file_generator.web.api import create_api_router
 
-    app.include_router(create_api_router(max_upload_bytes=max_upload_bytes, caps=caps))
+    app.include_router(
+        create_api_router(max_upload_bytes=max_upload_bytes, caps=caps, limiter=limiter)
+    )
 
     @app.get("/download/{token}")
     def download(token: str) -> FileResponse:
@@ -259,6 +270,7 @@ def create_app(
     # Expose internals the tests rely on without leaking them into responses.
     app.state.artifacts = artifacts
     app.state.workdir = workdir
+    app.state.limiter = limiter
     return app
 
 

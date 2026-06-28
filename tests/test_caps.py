@@ -15,16 +15,23 @@ def test_defaults_are_generous() -> None:
     assert caps.max_cost == 2_000_000
     assert caps.gen_timeout_s == 30
     assert caps.max_output_bytes == 50 * 1024 * 1024
+    # ADR-013 concurrency cap.
+    assert caps.max_concurrent == 8
+    assert caps.acquire_timeout_s == 5
 
 
 def test_from_env_overrides(monkeypatch) -> None:
     monkeypatch.setenv("COMMON_FILE_GEN_MAX_SLIDES", "7")
     monkeypatch.setenv("COMMON_FILE_GEN_GEN_TIMEOUT_S", "3")
     monkeypatch.setenv("COMMON_FILE_GEN_MAX_OUTPUT_MB", "2")
+    monkeypatch.setenv("COMMON_FILE_GEN_MAX_CONCURRENT", "2")
+    monkeypatch.setenv("COMMON_FILE_GEN_ACQUIRE_TIMEOUT_S", "1")
     caps = Caps.from_env()
     assert caps.max_slides == 7
     assert caps.gen_timeout_s == 3
     assert caps.max_output_bytes == 2 * 1024 * 1024
+    assert caps.max_concurrent == 2
+    assert caps.acquire_timeout_s == 1
     # An untouched var keeps its default.
     assert caps.max_sections == 200
 

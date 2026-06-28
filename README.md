@@ -209,10 +209,19 @@ overridable via environment variables:
 | `COMMON_FILE_GEN_MAX_COST` | 2000000 | composite cross-field budget |
 | `COMMON_FILE_GEN_GEN_TIMEOUT_S` | 30 | per-request generation wall-clock |
 | `COMMON_FILE_GEN_MAX_OUTPUT_MB` | 50 | generated file size |
+| `COMMON_FILE_GEN_MAX_CONCURRENT` | 8 | simultaneous generations (global) |
+| `COMMON_FILE_GEN_ACQUIRE_TIMEOUT_S` | 5 | wait for a free slot before `503` |
 
 Over-large requests are rejected `422` (counts/composite) before any work;
 generation exceeding the time limit returns `503`, and an oversized output `400`.
 The timeout and size guards apply to the UI too.
+
+A **global concurrency cap** (ADR-013) bounds how many generations run at once
+across the whole process (UI and API combined). When all slots are busy a new
+request waits up to `COMMON_FILE_GEN_ACQUIRE_TIMEOUT_S` for one to free, then
+returns `503`. Because the server runs as a single process, this is mainly a
+memory/pile-up backstop rather than a parallelism setting; tune it down on a
+small host.
 
 The UI's **Docs** header link points at the hosted documentation site; the URL
 defaults to the GitHub Pages address and is overridable via the

@@ -16,10 +16,18 @@ ADR-010 runtime guards: a wall-clock **timeout** (generation runs in a worker
 thread the caller joins with a deadline) and an **output-size** cap. These guard
 the work the per-request count caps cannot bound -- pathological CPU and the
 ``fill`` path -- and apply uniformly to API and UI, generate and fill.
+
+:func:`run_guarded` also enforces the ADR-013 **global concurrency cap**: when a
+``limiter`` semaphore is supplied it is acquired (with a bounded wait) before the
+worker thread starts and released in a ``finally``, so a burst of requests that
+each pass every per-request cap still cannot run more than ``max_concurrent`` at
+once. Acquiring here -- the one seam both front-ends and both paths share --
+mirrors where the ADR-010 guards live.
 """
 
 from __future__ import annotations
 
+import logging
 import tempfile
 import threading
 from collections.abc import Callable
@@ -37,6 +45,8 @@ from common_file_generator.web.caps import Caps
 
 _OFFICE = "application/vnd.openxmlformats-officedocument"
 
+_log = logging.getLogger("common_file_generator.web")
+
 
 class GenerationTimeout(Exception):
     """Generation exceeded the configured wall-clock budget (ADR-010)."""
@@ -44,6 +54,10 @@ class GenerationTimeout(Exception):
 
 class OutputTooLarge(Exception):
     """A generated file exceeded the configured output-size cap (ADR-010)."""
+
+
+class ConcurrencyLimited(Exception):
+    """No generation slot freed within the acquire window (ADR-013)."""
 
 
 @dataclass(frozen=True)
@@ -121,8 +135,19 @@ def file_kind(key: str) -> FileKind:
     return _KINDS[key]
 
 
-def run_guarded(work: Callable[[], Path], caps: Caps) -> Path:
-    """Run ``work`` under the ADR-010 timeout and output-size guards.
+def run_guarded(
+    work: Callable[[], Path],
+    caps: Caps,
+    limiter: threading.BoundedSemaphore | None = None,
+) -> Path:
+    """Run ``work`` under the ADR-010 timeout/size guards and ADR-013 concurrency.
+
+    When ``limiter`` is supplied (the app passes the process-wide generation
+    semaphore), a slot is acquired before any work starts, waiting up to
+    ``caps.acquire_timeout_s`` for one to free; if none does, a warning is logged
+    and :class:`ConcurrencyLimited` is raised (surfaced as ``503``). The slot is
+    released in a ``finally`` so it is returned on success, timeout, or error.
+    Passing ``limiter=None`` (e.g. a direct unit-test call) skips the cap.
 
     ``work`` builds a file and returns its path. Generation runs in a daemon
     worker thread the caller joins with ``caps.gen_timeout_s``; on expiry a
@@ -132,6 +157,25 @@ def run_guarded(work: Callable[[], Path], caps: Caps) -> Path:
     successful build the output is checked against ``caps.max_output_bytes`` and
     :class:`OutputTooLarge` is raised if it overflows.
     """
+    if limiter is not None and not limiter.acquire(timeout=caps.acquire_timeout_s):
+        _log.warning(
+            "Generation rejected: no slot freed within %ss "
+            "(max_concurrent=%s reached).",
+            caps.acquire_timeout_s,
+            caps.max_concurrent,
+        )
+        raise ConcurrencyLimited(
+            "The server is busy generating other files. Please retry shortly."
+        )
+    try:
+        return _run_with_runtime_guards(work, caps)
+    finally:
+        if limiter is not None:
+            limiter.release()
+
+
+def _run_with_runtime_guards(work: Callable[[], Path], caps: Caps) -> Path:
+    """Apply the ADR-010 timeout and output-size guards around ``work``."""
     result: dict[str, Path] = {}
     error: dict[str, BaseException] = {}
 
@@ -163,14 +207,18 @@ def run_guarded(work: Callable[[], Path], caps: Caps) -> Path:
 
 
 def generate_to_path(
-    kind: FileKind, out_dir: Path, caps: Caps, **params: object
+    kind: FileKind,
+    out_dir: Path,
+    caps: Caps,
+    limiter: threading.BoundedSemaphore | None = None,
+    **params: object,
 ) -> Path:
     """Generate a ``kind`` file into ``out_dir`` and return its path.
 
     Only the parameters the builder accepts are passed through; ``None`` values
     are dropped so the core's own defaults apply. Generation runs under the
-    ADR-010 runtime guards (:func:`run_guarded`). The UI uses this to keep the
-    file for token-based download.
+    ADR-010 runtime guards and the ADR-013 concurrency cap (:func:`run_guarded`,
+    ``limiter``). The UI uses this to keep the file for token-based download.
     """
     out = out_dir / f"{kind.key}{kind.suffix}"
     accepted = {
@@ -183,15 +231,20 @@ def generate_to_path(
         kind.builder(str(out), **accepted)
         return out
 
-    return run_guarded(_build, caps)
+    return run_guarded(_build, caps, limiter)
 
 
-def generate_bytes(kind: FileKind, caps: Caps, **params: object) -> bytes:
+def generate_bytes(
+    kind: FileKind,
+    caps: Caps,
+    limiter: threading.BoundedSemaphore | None = None,
+    **params: object,
+) -> bytes:
     """Generate a ``kind`` file and return its bytes, leaving nothing behind.
 
     The API path: build into a throwaway temp dir, read the bytes, discard the
     directory. No token, no persistence.
     """
     with tempfile.TemporaryDirectory(prefix="cfg-api-") as tmp:
-        path = generate_to_path(kind, Path(tmp), caps, **params)
+        path = generate_to_path(kind, Path(tmp), caps, limiter, **params)
         return path.read_bytes()

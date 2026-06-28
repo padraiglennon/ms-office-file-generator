@@ -8,6 +8,9 @@ owns:
 - the **composite cost** estimate and its budget (a cross-field guard for
   combinations that pass each per-field cap but multiply huge),
 - the **runtime guards** (generation wall-clock timeout and output-size cap),
+- the **concurrency guard** (max simultaneous generations and the wait a request
+  will tolerate for a free slot before a 503; the semaphore itself lives in the
+  app, ADR-013),
 
 plus the environment resolution for all of the above. Defaults are generous --
 comfortably above any real transient-test-file need -- so the caps are a sanity
@@ -84,6 +87,8 @@ class Caps:
     max_cost: int = 2_000_000
     gen_timeout_s: int = 30
     max_output_mb: int = 50
+    max_concurrent: int = 8
+    acquire_timeout_s: int = 5
 
     @property
     def max_output_bytes(self) -> int:
@@ -105,6 +110,12 @@ class Caps:
             max_cost=_env_int("COMMON_FILE_GEN_MAX_COST", cls.max_cost),
             gen_timeout_s=_env_int("COMMON_FILE_GEN_GEN_TIMEOUT_S", cls.gen_timeout_s),
             max_output_mb=_env_int("COMMON_FILE_GEN_MAX_OUTPUT_MB", cls.max_output_mb),
+            max_concurrent=_env_int(
+                "COMMON_FILE_GEN_MAX_CONCURRENT", cls.max_concurrent
+            ),
+            acquire_timeout_s=_env_int(
+                "COMMON_FILE_GEN_ACQUIRE_TIMEOUT_S", cls.acquire_timeout_s
+            ),
         )
 
 

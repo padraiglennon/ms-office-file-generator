@@ -254,6 +254,22 @@ def test_ui_output_too_large_errors() -> None:
     assert resp.status_code == 400
 
 
+def test_ui_concurrency_full_returns_503() -> None:
+    # The ADR-013 cap is shared with the API via the same service seam, so the UI
+    # path 503s when no slot is free too.
+    app = create_app(caps=Caps(max_concurrent=1, acquire_timeout_s=0))
+    c = TestClient(app)
+    assert app.state.limiter.acquire(timeout=0)
+    try:
+        resp = c.post(
+            "/generate/md",
+            data={"complexity": "standard", "sections": "1", "seed": "0"},
+        )
+    finally:
+        app.state.limiter.release()
+    assert resp.status_code == 503
+
+
 def test_doc_fields_track_the_core() -> None:
     from common_file_generator.web.forms import doc_fields
 
