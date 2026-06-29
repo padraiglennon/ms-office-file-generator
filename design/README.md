@@ -16,3 +16,4 @@
 | [ADR-012](ADR-012-word-generator-theming.md) | Themed styling for the Word document generator | Done | [#5](https://github.com/padraiglennon/common-file-generator/issues/5) |
 | [ADR-013](ADR-013-concurrency-cap-hosted-generation.md) | Global concurrency cap for hosted file generation | Done | [#15](https://github.com/padraiglennon/common-file-generator/issues/15) |
 | [ADR-014](ADR-014-visual-docs-ui-screenshots.md) | Visual & narrative documentation with automated UI screenshots | Done | [#23](https://github.com/padraiglennon/common-file-generator/issues/23) |
+| [ADR-015](ADR-015-screenshot-drift-precommit-guard.md) | Warn-only pre-commit guard for UI screenshot drift | Proposed | [#24](https://github.com/padraiglennon/common-file-generator/issues/24) |
