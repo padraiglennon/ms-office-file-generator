@@ -26,3 +26,18 @@ repos:
         types: [python]
         pass_filenames: false
         always_run: true
+      # Warn-only UI screenshot-drift guard (ADR-015). Fires only when a commit
+      # stages UI-affecting files; re-captures headless and pixel-diffs against
+      # the committed PNGs. Always exits 0 (never blocks); skips cleanly when
+      # Chromium/the shots+web extras aren't installed.
+      - id: screenshot-drift
+        name: screenshot-drift (warn-only)
+        entry: uv run python scripts/check_screenshot_drift.py
+        language: system
+        pass_filenames: false
+        files: >-
+          (?x)^(
+            src/common_file_generator/web/.*|
+            scripts/capture_screenshots\.py|
+            docs/assets/screenshots/.*\.png
+          )$

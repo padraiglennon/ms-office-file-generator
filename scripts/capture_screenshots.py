@@ -20,8 +20,6 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-from playwright.sync_api import sync_playwright
-
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _OUT_DIR = _REPO_ROOT / "docs" / "assets" / "screenshots"
 _HOST = "127.0.0.1"
@@ -66,20 +64,25 @@ def _wait_for_health(base_url: str, proc: subprocess.Popen[bytes]) -> None:
     raise RuntimeError(f"gen-ui did not become healthy within {_STARTUP_TIMEOUT_S}s")
 
 
-def _capture(base_url: str) -> None:
-    _OUT_DIR.mkdir(parents=True, exist_ok=True)
+def _capture(base_url: str, out_dir: Path) -> None:
+    # Imported lazily so the module loads without the browser toolchain - the
+    # drift-check hook (ADR-015) imports this module to reuse capture_to() and
+    # must be able to skip cleanly when Playwright/Chromium aren't installed.
+    from playwright.sync_api import sync_playwright
+
+    out_dir.mkdir(parents=True, exist_ok=True)
     with sync_playwright() as pw:
         browser = pw.chromium.launch()
         page = browser.new_page(viewport=_VIEWPORT)
         page.goto(base_url, wait_until="networkidle")
 
         # Landing page (deck tab is active by default).
-        page.screenshot(path=str(_OUT_DIR / "ui-home.png"))
+        page.screenshot(path=str(out_dir / "ui-home.png"))
 
         for suffix, filename in _TABS:
             page.click(f"#tab-{suffix}")
             page.wait_for_selector(f"#panel-{suffix}:not([hidden])")
-            page.screenshot(path=str(_OUT_DIR / filename))
+            page.screenshot(path=str(out_dir / filename))
 
         # Drive one seeded deck generation and capture the result partial.
         page.click("#tab-deck")
@@ -89,12 +92,18 @@ def _capture(base_url: str) -> None:
         page.click("#panel-deck button[type='submit']")
         # HTMX swaps the download partial into #deck-result; wait for the link.
         page.wait_for_selector("#deck-result a", timeout=15_000)
-        page.screenshot(path=str(_OUT_DIR / "ui-result.png"))
+        page.screenshot(path=str(out_dir / "ui-result.png"))
 
         browser.close()
 
 
-def main() -> int:
+def capture_to(out_dir: Path) -> None:
+    """Start gen-ui, capture all screenshots into ``out_dir``, tear it down.
+
+    Shared by ``make screenshots`` (writing the committed PNGs) and the
+    drift-check hook (capturing into a temp dir to diff). Capture inputs are
+    fixed (seed, viewport), so the same UI yields the same images.
+    """
     port = _free_port()
     base_url = f"http://{_HOST}:{port}"
     proc = subprocess.Popen(
@@ -103,13 +112,17 @@ def main() -> int:
     )
     try:
         _wait_for_health(base_url, proc)
-        _capture(base_url)
+        _capture(base_url, out_dir)
     finally:
         proc.terminate()
         try:
             proc.wait(timeout=10)
         except subprocess.TimeoutExpired:
             proc.kill()
+
+
+def main() -> int:
+    capture_to(_OUT_DIR)
     print(f"Wrote screenshots to {_OUT_DIR.relative_to(_REPO_ROOT)}/")
     return 0
 

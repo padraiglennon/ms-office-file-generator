@@ -1,6 +1,6 @@
 # ADR-015: Warn-only pre-commit guard for UI screenshot drift
 
-- **Status:** Proposed
+- **Status:** Done
 - **Date:** 2026-06-29
 - **Tracking issue:** #24
 - **Builds on:** ADR-014 (visual docs & automated UI screenshots)
@@ -87,8 +87,10 @@ its output directory is a parameter (defaulting to the current
 
 ### Tolerance: per-pixel threshold + total-diff-ratio
 
-Comparison uses **Pillow** (added to the `shots` optional-dependency group
-alongside Playwright). For each image pair:
+Comparison uses **Pillow**, which is already a core runtime dependency
+(`pyproject.toml`, used by the PDF generator) - so no new dependency is needed
+for the diff. (This corrects the original plan to add Pillow to the `shots`
+extra: it is already available everywhere the hook runs.) For each image pair:
 
 - Two pixels are "different" only if their per-channel color distance exceeds a
   **per-pixel threshold** (absorbs sub-pixel anti-aliasing / font-hinting
@@ -159,8 +161,7 @@ is exactly the "you forgot to re-capture" case the guard exists to surface.
 - Pixel-diff tolerance is a tuned heuristic; a too-tight ratio nags on
   cross-machine noise, a too-loose one misses small real changes. The constants
   are exposed for tuning, but they are still a judgement call.
-- Adds Pillow to the `shots` extra (not the runtime container - `shots` stays
-  out of the `web` extra and the Dockerfile, per ADR-014).
+- No new dependency: Pillow (the diff library) is already a core dependency.
 
 ### Follow-ups (future ADRs)
 
@@ -205,8 +206,8 @@ is exactly the "you forgot to re-capture" case the guard exists to surface.
    a gitignored temp dir.
 3. With Chromium/extras missing, the hook prints the documented skip notice and
    exits 0 - it never blocks a commit.
-4. Pillow is added to the `shots` optional extra only; the runtime container
-   (Dockerfile, `web` extra) is unchanged.
+4. The diff uses Pillow (already a core dependency); no new dependency and no
+   change to the runtime container (Dockerfile, `web` extra).
 5. A `.gitignore` entry covers the diff-output directory; no diff artifacts are
    committable.
 6. Secret, security, and anti-hallucination reviews are clean.

@@ -231,3 +231,8 @@ __marimo__/
 
 # Local docker-compose override (dev source-mount + autoreload; machine-specific).
 docker-compose.override.yml
+
+# Screenshot-drift check artifacts (ADR-015): freshly-captured PNGs and visual
+# diffs. Normally written to the system temp dir; ignore the prefix in case a
+# run is pointed at the tree.
+screenshot-drift-*/
